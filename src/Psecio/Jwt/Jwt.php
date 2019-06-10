@@ -2,17 +2,24 @@
 
 namespace Psecio\Jwt;
 
+use InvalidArgumentException;
+use Psecio\Jwt\Claim\Custom;
+use Psecio\Jwt\Exception\InvalidKeyException;
+use Psecio\Jwt\Exception\SignatureErrorException;
+use RuntimeException;
+use stdClass;
+
 class Jwt
 {
     /**
      * Set of claims for the current JWT object
-     * @var \Psecio\Jwt\ClaimsCollection
+     * @var ClaimsCollection
      */
     private $claims;
 
     /**
      * Current header for JWT object
-     * @var \Psecio\Jwt\Header
+     * @var Header
      */
     private $header;
 
@@ -20,14 +27,14 @@ class Jwt
      * Initialize the object and set the header and claims collection
      *    Empty claims collection is set if none is given
      *
-     * @param \Psecio\Jwt\Header $header Header instance to set on JWT object
-     * @param \Psecio\Jwt\ClaimsCollection $collection Claims collection [optional]
+     * @param Header $header Header instance to set on JWT object
+     * @param ClaimsCollection $collection Claims collection [optional]
      */
-    public function __construct(\Psecio\Jwt\Header $header, \Psecio\Jwt\ClaimsCollection $collection = null)
+    public function __construct(Header $header, ClaimsCollection $collection = null)
     {
         $this->setHeader($header);
         if ($collection == null) {
-            $collection = new \Psecio\Jwt\ClaimsCollection();
+            $collection = new ClaimsCollection();
         }
         $this->setClaims($collection);
     }
@@ -35,10 +42,10 @@ class Jwt
     /**
      * Set the header instance
      *
-     * @param \Psecio\Jwt\Header $header [description]
-     * @return \Psecio\Jwt\Jwt Current Jwt instance
+     * @param Header $header [description]
+     * @return Jwt Current Jwt instance
      */
-    public function setHeader(\Psecio\Jwt\Header $header)
+    public function setHeader(Header $header)
     {
         $this->header = $header;
         return $this;
@@ -47,7 +54,7 @@ class Jwt
     /**
      * Get the currently assigned header instance
      *
-     * @return \Psecio\Jwt\Header Header object instance
+     * @return Header Header object instance
      */
     public function getHeader()
     {
@@ -57,10 +64,10 @@ class Jwt
     /**
      * Add a Claim to the current collection
      *
-     * @param \Psecio\Jwt\Claim $claim Claim instance to add
-     * @return \Psecio\Jwt\Jwt Current Jwt instance
+     * @param Claim $claim Claim instance to add
+     * @return Jwt Current Jwt instance
      */
-    public function addClaim(\Psecio\Jwt\Claim $claim)
+    public function addClaim(Claim $claim)
     {
         $this->claims->add($claim);
         return $this;
@@ -69,7 +76,7 @@ class Jwt
     /**
      * Get the current claims collection
      *
-     * @return \Psecio\Jwt\ClaimsCollection instance
+     * @return ClaimsCollection instance
      */
     public function getClaims()
     {
@@ -79,10 +86,10 @@ class Jwt
     /**
      * Set the claims collection
      *
-     * @param \Psecio\Jwt\ClaimsCollection $collection Claims collection instance
-     * @return \Psecio\Jwt\Jwt Current Jwt instance
+     * @param ClaimsCollection $collection Claims collection instance
+     * @return Jwt Current Jwt instance
      */
-    public function setClaims(\Psecio\Jwt\ClaimsCollection $collection)
+    public function setClaims(ClaimsCollection $collection)
     {
         $this->claims = $collection;
         return $this;
@@ -92,6 +99,7 @@ class Jwt
      * Encode the data, either given or from current object
      *
      * @param string $claims Claims string to encode [optional]
+     * @param bool $addIssued
      * @return string Encoded data, appended by periods
      */
     public function encode($claims = null, $addIssued = false)
@@ -140,7 +148,7 @@ class Jwt
      *
      * @param string $data Data to decode (entire JWT data string)
      * @param boolean $verify Verify the signature on the data [optional]
-     * @return \stdClass Decoded claims data
+     * @return stdClass Decoded claims data
      * @throws Exception\BadSignatureException If signature doesn't verify
      * @throws Exception\DecodeException If invalid number of sections
      */
@@ -171,13 +179,14 @@ class Jwt
      *
      * @param string $algorithm Algorithm to use for encryption
      * @param string $iv IV for encrypting data
+     * @param string $key
      * @return string Encrypted string
-     * @throws \RuntimeException If OpenSSL is not enabled
+     * @throws RuntimeException If OpenSSL is not enabled
      */
     public function encrypt($algorithm, $iv, $key)
     {
         if (!function_exists('openssl_encrypt')) {
-            throw new \RuntimeException('Cannot encrypt data, OpenSSL not enabled');
+            throw new RuntimeException('Cannot encrypt data, OpenSSL not enabled');
         }
 
         $data = json_encode($this->getClaims()->toArray(), JSON_UNESCAPED_SLASHES);
@@ -195,14 +204,15 @@ class Jwt
      * @param string $data Data to decrypt
      * @param string $algorithm Algorithm to use for decrypting the data
      * @param string $iv
+     * @param string $key
      * @return string Decrypted data
      * @throws Exception\DecodeException If incorrect number of sections is provided
-     * @throws \RuntimeException If OpenSSL is not installed
+     * @throws RuntimeException If OpenSSL is not installed
      */
     public function decrypt($data, $algorithm, $iv, $key)
     {
         if (!function_exists('openssl_encrypt')) {
-            throw new \RuntimeException('Cannot encrypt data, OpenSSL not enabled');
+            throw new RuntimeException('Cannot encrypt data, OpenSSL not enabled');
         }
 
         // Decrypt just the claims
@@ -222,8 +232,8 @@ class Jwt
      * Verify the signature on the JWT message
      *
      * @param string $key Key used for hashing
-     * @param \stdClass $header Header data (object)
-     * @param \stdClass $claims Set of claims
+     * @param stdClass $header Header data (object)
+     * @param stdClass $claims Set of claims
      * @param string $signature Signature string
      * @return boolean Pass/fail of verification
      * @throws Exception\ExpiredException If the message has expired
@@ -253,7 +263,7 @@ class Jwt
             );
         }
 
-        $algorithm = $header->alg;
+//        $algorithm = $header->alg;
         $signWith = implode('.', array(
             $this->base64Encode(json_encode($header, JSON_UNESCAPED_SLASHES)),
             $this->base64Encode(json_encode($claims, JSON_UNESCAPED_SLASHES))
@@ -304,10 +314,10 @@ class Jwt
 
         $hash = '\\Psecio\\Jwt\\HashMethod\\' . $hashType;
         if (class_exists($hash) === false) {
-            throw new \InvalidArgumentException('Invalid hash type: ' . $hashType);
+            throw new InvalidArgumentException('Invalid hash type: ' . $hashType);
         }
 
-        /** @var \Psecio\Jwt\HashMethod $hash */
+        /** @var HashMethod $hash */
         $hash = new $hash();
 
         if ($hash->getKeyType() === 'HMAC') {
@@ -319,7 +329,7 @@ class Jwt
             );
         } else {
             if ($hash->isValidKey($key) === false) {
-                throw new \Psecio\Jwt\Exception\InvalidKeyException('Invalid key provided');
+                throw new InvalidKeyException('Invalid key provided');
             }
             openssl_sign(
                 $signWith,
@@ -330,7 +340,7 @@ class Jwt
         }
 
         if ($signature === false) {
-            throw new \Psecio\Jwt\Exception\SignatureErrorException('Error signing with provided key');
+            throw new SignatureErrorException('Error signing with provided key');
         }
 
         return $signature;
@@ -350,9 +360,9 @@ class Jwt
 
         $hash = '\\Psecio\\Jwt\\HashMethod\\' . $hashType;
         if (class_exists($hash) === false) {
-            throw new \InvalidArgumentException('Invalid hash type: ' . $hashType);
+            throw new InvalidArgumentException('Invalid hash type: ' . $hashType);
         }
-        /** @var \Psecio\Jwt\HashMethod $hash */
+        /** @var HashMethod $hash */
         $hash = new $hash();
 
         if ($hash->getKeyType() === 'HMAC') {
@@ -362,10 +372,10 @@ class Jwt
                 $key,
                 true
             );
-            return $this->hash_equals($actualSignature, $expectedSignature);
+            return hash_equals($actualSignature, $expectedSignature);
         } else {
             if ($hash->isValidKey($key) === false) {
-                throw new \Psecio\Jwt\Exception\InvalidKeyException('Invalid key provided');
+                throw new InvalidKeyException('Invalid key provided');
             }
             return openssl_verify(
                     $signWith,
@@ -382,20 +392,20 @@ class Jwt
      *
      * @param string $name Function name
      * @param array $args Arguments to pass
-     * @return \Psecio\Jwt\Jwt instance
-     * @throws \InvalidArgumentException If invalid claim type
+     * @return Jwt instance
+     * @throws InvalidArgumentException If invalid claim type
      */
     public function __call($name, $args)
     {
         // see if it matches one of our claim types
         $className = "\\Psecio\\Jwt\\Claim\\" . ucwords($name);
         if (class_exists($className)) {
-            $type = (isset($args[1])) ? $args[1] : null;
+//            $type = (isset($args[1])) ? $args[1] : null;
             $claim = new $className($args[0]);
             $this->addClaim($claim);
             return $this;
         } else {
-            throw new \InvalidArgumentException('Invalid claim type "' . $name . '"');
+            throw new InvalidArgumentException('Invalid claim type "' . $name . '"');
         }
     }
 
@@ -420,34 +430,15 @@ class Jwt
      *
      * @param string|array $value Either a string for a single claim or array for multiple
      * @param string $name Name of claim to use if string given for "name" [optional]
-     * @return \Psecio\Jwt\Jwt instance
+     * @return Jwt instance
      */
     public function custom($value, $name = null)
     {
         $value = (!is_array($value)) ? array($name => $value) : $value;
-        foreach ($value as $type => $value) {
-            $claim = new \Psecio\Jwt\Claim\Custom($value, $type);
+        foreach ($value as $type => $tValue) {
+            $claim = new Custom($tValue, $type);
             $this->addClaim($claim);
         }
         return $this;
-    }
-
-    /**
-     * Polyfill PHP 5.6.0's hash_equals() feature
-     */
-    public function hash_equals($a, $b)
-    {
-        if (\function_exists('hash_equals')) {
-            return \hash_equals($a, $b);
-        }
-        if (\strlen($a) !== \strlen($b)) {
-            return false;
-        }
-        $res = 0;
-        $len = \strlen($a);
-        for ($i = 0; $i < $len; ++$i) {
-            $res |= \ord($a[$i]) ^ \ord($b[$i]);
-        }
-        return $res === 0;
     }
 }

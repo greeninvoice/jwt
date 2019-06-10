@@ -352,7 +352,7 @@ class Jwt
      * @param string $signWith Data to sign hash with
      * @param string $key Key for signing
      * @param string $expectedSignature
-     * @return string Generated signature hash
+     * @return bool
      */
     public function verifySignature($signWith, $key, $expectedSignature)
     {

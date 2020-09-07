@@ -442,6 +442,10 @@ class Jwt
         return $this;
     }
 
+    /**
+     * @param $value
+     * @return false|string
+     */
     public function jsonEncode($value)
     {
         return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
